@@ -1,0 +1,61 @@
+import os
+import numpy as np
+
+configfile: "config/config.yaml"
+conda: "envs/environments.yaml"
+
+rawdir = os.path.join(config["datadir"], "train")
+outdir = os.path.join(config["rootdir"], "out")
+
+environmentdir = os.path.join(config["rootdir"], "envs")
+resourcedir = os.path.join(config["rootdir"], "resources")
+workflowdir = os.path.join(config["rootdir"], "workflow")
+
+# Create the results directory if it doesn't exist already
+os.makedirs(outdir, exist_ok=True)
+
+# Specifies the files which should exist at the end of the processing
+endfiles = [
+    # os.path.join(outdir, "X_train.pkl"),
+    # os.path.join(outdir, "y_train.pkl")
+    os.path.join(outdir, "sub-{subid}", "sub-{subid}_ses-{series}_ICA_sources.png")
+]
+
+subids = np.unique([fname[4] for fname in os.listdir(os.path.join(rawdir)) if fname.startswith("subj")])
+series = list(range(1, 9))
+
+rule all:
+    """
+    Generates all required outputs
+    """
+    input:
+        expand(endfiles, subid=subids, series=series)
+
+rule create_raw:
+    input:
+        os.path.join(rawdir, "subj{subid}_series{series}_data.csv"),
+        os.path.join(rawdir, "subj{subid}_series{series}_events.csv")
+    params:
+        rawdir=rawdir,
+        outdir=outdir,
+        workflowdir=workflowdir
+    output:
+        os.path.join(outdir, "sub-{subid}", "sub-{subid}_ses-{series}_raw.pkl")
+    conda:
+        "envs/environments.yaml"
+    shell:
+        "mkdir -p {params.outdir}/sub-{wildcards.subid} && "
+        "python {params.workflowdir}/scripts/create_raw.py --inp_dir {params.rawdir} --subid {wildcards.subid} --series {wildcards.series} --output {output}"
+
+rule create_ica:
+    input:
+        os.path.join(outdir, "sub-{subid}", "sub-{subid}_ses-{series}_raw.pkl")
+    params:
+        rawdir=rawdir,
+        outdir=outdir,
+        workflowdir=workflowdir
+    output:
+        os.path.join(outdir, "sub-{subid}", "sub-{subid}_ses-{series}_ICA.pkl"),
+        os.path.join(outdir, "sub-{subid}", "sub-{subid}_ses-{series}_ICA_sources.png")
+    shell:
+        "python {params.workflowdir}/scripts/create_ica.py --input {input} --outdir {params.outdir}/sub-{wildcards.subid} --subid {wildcards.subid} --series {wildcards.series}"
